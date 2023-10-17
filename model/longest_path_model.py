@@ -1,4 +1,5 @@
 import pulp
+from pulp import PULP_CBC_CMD
 
 from model.abstract_model import AbstractModel
 
@@ -11,7 +12,8 @@ class LongestPathModel(AbstractModel):
                  out_nodes,
                  depot,
                  previous_sols: list = None,
-                 must_select_cities: list = None):
+                 must_select_cities: list = None,
+                 character_arcs: dict = None):
         self.m = pulp.LpProblem('Longest Path', pulp.LpMaximize)
         self.node_list = node_list
         self.arc_list = arc_list
@@ -20,6 +22,7 @@ class LongestPathModel(AbstractModel):
         self.depot = depot
         self.previous_sols = previous_sols
         self.must_select_cities = must_select_cities
+        self.character_arcs = character_arcs
         self.big_m = len(node_list)
         return
 
@@ -29,8 +32,12 @@ class LongestPathModel(AbstractModel):
     def _set_variables(self):
         self.y = pulp.LpVariable.dicts('y', self.node_list, cat=pulp.LpBinary)
         self.x = pulp.LpVariable.dicts('x', self.arc_list, cat=pulp.LpBinary)
-        self.n = pulp.LpVariable.dicts('n',
-                                       self.node_list,
+        # self.n = pulp.LpVariable.dicts('n',
+        #                                self.node_list,
+        #                                cat=pulp.LpContinuous)
+        self.f = pulp.LpVariable.dicts('f',
+                                       self.arc_list,
+                                       lowBound=0,
                                        cat=pulp.LpContinuous)
         return
 
@@ -62,7 +69,8 @@ class LongestPathModel(AbstractModel):
         return list()
 
     def _optimize(self):
-        self.m.solve()
+        time_limit_in_seconds = 60 * 60
+        self.m.solve(PULP_CBC_CMD(msg=1, timeLimit=time_limit_in_seconds))
         return
 
     def _is_feasible(self):
@@ -85,11 +93,21 @@ class LongestPathModel(AbstractModel):
         return
 
     def _set_mtz_constraints(self):
-        for (i, j) in self.arc_list:
+        # for (i, j) in self.arc_list:
+        #     if j == self.depot:
+        #         continue
+        #     self.m += (self.n[j] - self.n[i] - 1 >= self.big_m *
+        #                (self.x[i, j] - 1), f'mtz-{i}-{j}')
+        for j in self.node_list:
             if j == self.depot:
                 continue
-            self.m += (self.n[j] - self.n[i] - 1 >= self.big_m *
-                       (self.x[i, j] - 1), f'mtz-{i}-{j}')
+            self.m += (pulp.lpSum(self.f[i, j] for i in self.in_nodes[j]) +
+                       self.y[j] == pulp.lpSum(self.f[j, k]
+                                               for k in self.out_nodes[j]),
+                       f'gg-{j}')
+        for (i, j) in self.arc_list:
+            self.m += (self.f[i, j] <= self.big_m * self.x[i, j],
+                       f'x-f-{i}-{j}')
         return
 
     def _set_selection_constraints(self):
@@ -99,6 +117,9 @@ class LongestPathModel(AbstractModel):
             self.m += (pulp.lpSum(self.x[i, j]
                                   for j in self.out_nodes[i]) == self.y[i],
                        f'x-y-1-{i}')
+            # self.m += (pulp.lpSum(self.x[j, i]
+            #                       for j in self.in_nodes[i]) == self.y[i],
+            #            f'x-y-2-{i}')
         for idx, sol in enumerate(self.previous_sols):
             temp_sol = sol[:-1]
             self.m += (pulp.lpSum(self.y[item[1]]
@@ -106,5 +127,10 @@ class LongestPathModel(AbstractModel):
                        f'cutoff-{idx}')
         for i in self.must_select_cities:
             self.m += (self.y[i] == 1, f'must-select-{i}')
+
+        # for key, arcs in self.character_arcs.items():
+        #     self.m += (pulp.lpSum(self.x[arc]
+        #                           for arc in arcs) <= 1, f'character-{key}')
+
         self.m += (self.y[self.depot] == 0, 'depot')
         return

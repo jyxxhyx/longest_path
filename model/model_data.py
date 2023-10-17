@@ -19,6 +19,17 @@ def transform_index_to_city_name(sols, city_list):
     return city_name_sols
 
 
+def get_character_arcs(arc_list, city_list, depot_index):
+    character_arcs = dict()
+    for arc in arc_list:
+        if arc[0] == depot_index:
+            character = city_list[arc[1]][0]
+        else:
+            character = city_list[arc[0]][-1]
+        character_arcs.setdefault(character, list()).append(arc)
+    return character_arcs
+
+
 def _generate_graph(city_list, city_index_dict, depot_index):
     prefix_dict = dict()
     suffix_dict = dict()
@@ -37,6 +48,8 @@ def _generate_graph(city_list, city_index_dict, depot_index):
         to_nodes = prefix_dict[character]
 
         for (from_node, to_node) in itertools.product(from_nodes, to_nodes):
+            if from_node == to_node:
+                continue
             arc_list.append((city_index_dict[from_node], city_index_dict[to_node]))
 
     for city in city_list:
